@@ -2,6 +2,8 @@ using System;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.IO;
+using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
 using TMPro;
 using UnityEngine;
@@ -23,6 +25,9 @@ public class NetworkManager : MonoBehaviour
     public TMP_Text receivedText;
     private string receivedMessage = "";
     private bool hasNewMessage = false;
+
+    // 画像送信用のポート
+    public int imagePort = 50001;
 
     // シングルトン
     void Awake()
@@ -182,5 +187,52 @@ public class NetworkManager : MonoBehaviour
         }
 
         SendMessageToServer(touchScreenKeyboard.text);
+    }
+
+    // JPEG画像をUbuntuに送信
+    public async void SendImageToServer(byte[] imageData)
+    {
+        if (imageData == null || imageData.Length == 0)
+        {
+            Debug.LogError("送信する画像データがありません");
+            return;
+        }
+        Debug.Log("画像送信開始: " + imageData.Length + " bytes");
+
+        try
+        {
+            await Task.Run(async () =>
+            {
+                using (TcpClient imageClient = new TcpClient())
+                {
+                    // 画像送信用ポートに接続
+                    await imageClient.ConnectAsync(serverIP, imagePort);
+
+                    using (NetworkStream imageStream = imageClient.GetStream())
+                    {
+                        // 画像サイズを4バイトで表現
+                        byte[] sizeData = BitConverter.GetBytes(imageData.Length);
+
+                        // ネットワークバイトオーダーに変換
+                        if (BitConverter.IsLittleEndian)
+                        {
+                            Array.Reverse(sizeData);
+                        }
+
+                        // 画像サイズを送信
+                        await imageStream.WriteAsync(sizeData, 0, sizeData.Length);
+
+                        // 画像本体を送信
+                        await imageStream.WriteAsync(imageData, 0, imageData.Length);
+                        await imageStream.FlushAsync();
+                    }
+                }
+            });
+            Debug.Log("画像送信完了");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("画像送信失敗: " + e.Message);
+        }
     }
 }
